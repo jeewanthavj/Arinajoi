@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>ARIA · Motion AI</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500&display=swap');
+:root{
+  --bg:#0b0b0b;--sur:#141414;--s2:#1c1c1c;--s3:#242424;
+  --bd:#2c2c2c;--bd2:#333;--tx:#ebebeb;--mu:#5a5a5a;
+  --ac:#39ff9a;--bl:#3b9eff;--or:#ff6b35;--dn:#ff3b5c;--ye:#ffd600;
+  --mono:'Space Mono',monospace;--body:'DM Sans',sans-serif;
+  --r:8px;--tbh:58px;--tph:52px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-family:var(--body);-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
+
+/* ── TOP BAR ── */
+.topbar{
+  position:fixed;top:0;left:0;right:0;
+  height:calc(var(--tph) + env(safe-area-inset-top,0px));
+  padding-top:env(safe-area-inset-top,0px);
+  background:var(--sur);border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;padding-left:14px;padding-right:14px;gap:10px;
+  z-index:100;
+}
+.brand{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--ac);letter-spacing:2px;flex-shrink:0}
+.brand em{color:var(--mu);font-style:normal}
+.mbadge{
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:2px;
+  padding:4px 10px;border-radius:4px;border:1px solid var(--bd);
+  background:var(--s2);color:var(--mu);transition:all .3s;flex-shrink:0;
+}
+.mbadge.FAST{color:var(--dn);border-color:rgba(255,59,92,.5);background:rgba(255,59,92,.1)}
+.mbadge.SLOW{color:var(--bl);border-color:rgba(59,158,255,.5);background:rgba(59,158,255,.1)}
+.sp{flex:1}
+/* desktop api row */
+.desk-api{display:none;gap:8px;align-items:center}
+.desk-api label{font-family:var(--mono);font-size:10px;color:var(--mu);letter-spacing:1px;white-space:nowrap}
+.desk-api input{font-family:var(--mono);font-size:11px;background:var(--s2);border:1px solid var(--bd);color:var(--tx);padding:5px 10px;border-radius:4px;outline:none;width:175px;transition:border-color .2s}
+.desk-api input:focus{border-color:var(--bl)}
+.desk-api input::placeholder{color:var(--mu)}
+.desk-save{font-family:var(--mono);font-size:9px;letter-spacing:1px;padding:5px 10px;background:rgba(59,158,255,.1);border:1px solid rgba(59,158,255,.4);color:var(--bl);border-radius:4px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.desk-save:hover{background:rgba(59,158,255,.2)}
+.desk-ok{font-family:var(--mono);font-size:11px;color:var(--ac);display:none}
+.icon-btn{
+  width:38px;height:38px;background:var(--s2);border:1px solid var(--bd);
+  border-radius:var(--r);color:var(--mu);display:flex;align-items:center;
+  justify-content:center;cursor:pointer;flex-shrink:0;font-size:18px;transition:all .2s;
+}
+.icon-btn:active{background:var(--s3);color:var(--tx)}
+
+/* ── CONTENT ── */
+.content{
+  position:fixed;
+  top:calc(var(--tph) + env(safe-area-inset-top,0px));
+  left:0;right:0;
+  bottom:calc(var(--tbh) + env(safe-area-inset-bottom,0px));
+  overflow:hidden;
+}
+.tab-panel{position:absolute;inset:0;display:none;flex-direction:column;overflow:hidden}
+.tab-panel.active{display:flex}
+
+/* ── CAMERA TAB ── */
+.cam-wrap{flex:1;position:relative;background:#000;overflow:hidden}
+#videoEl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#poseCanvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)}
+.hud{position:absolute;inset:0;pointer-events:none}
+.hc{position:absolute;width:20px;height:20px;border-color:rgba(57,255,154,.7);border-style:solid}
+.hc.tl{top:12px;left:12px;border-width:2px 0 0 2px}
+.hc.tr{top:12px;right:12px;border-width:2px 2px 0 0}
+.hc.bl{bottom:12px;left:12px;border-width:0 0 2px 2px}
+.hc.br{bottom:12px;right:12px;border-width:0 2px 2px 0}
+.hlbl{position:absolute;font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:rgba(57,255,154,.6)}
+.hlbl.tl{top:14px;left:38px}
+.hlbl.br{bottom:14px;right:38px}
+.mflash{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-family:var(--mono);font-weight:700;font-size:clamp(36px,11vw,72px);
+  letter-spacing:4px;opacity:0;pointer-events:none;text-shadow:0 0 30px currentColor;
+}
+.mflash.show{animation:flash 1.8s forwards}
+.mflash.c-FAST{color:var(--dn)}.mflash.c-SLOW{color:var(--bl)}.mflash.c-STOP{color:var(--mu)}
+@keyframes flash{0%{opacity:.9}50%{opacity:.9}100%{opacity:0}}
+.soverlay{
+  position:absolute;inset:0;z-index:10;background:rgba(0,0,0,.88);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:18px;padding:24px;text-align:center;
+}
+.soverlay h2{font-family:var(--mono);font-size:16px;color:var(--ac);letter-spacing:2px}
+.soverlay p{font-size:13px;color:var(--mu);line-height:1.7;max-width:280px;font-family:var(--mono);letter-spacing:.5px}
+.sbtn{
+  padding:16px 34px;font-family:var(--mono);font-size:13px;font-weight:700;
+  letter-spacing:3px;background:rgba(57,255,154,.1);border:1px solid rgba(57,255,154,.6);
+  color:var(--ac);border-radius:var(--r);cursor:pointer;transition:all .2s;min-width:200px;
+}
+.sbtn:active{background:rgba(57,255,154,.2)}
+.sbtn:disabled{opacity:.4}
+/* stats strip */
+.cstats{
+  background:var(--sur);border-top:1px solid var(--bd);
+  padding:10px 14px;display:flex;gap:8px;align-items:center;flex-shrink:0;
+}
+.cstat{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:7px 10px;text-align:center;flex:1}
+.csv{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--ac);line-height:1}
+.csl{font-size:9px;color:var(--mu);letter-spacing:1px;margin-top:3px;font-family:var(--mono)}
+.gwrap{flex:2;display:flex;flex-direction:column;gap:4px}
+.gbar{height:6px;background:var(--s3);border-radius:3px;overflow:hidden;border:1px solid var(--bd)}
+.gfill{height:100%;width:0%;border-radius:3px;transition:width .15s,background .3s;background:var(--bl)}
+.glbl{font-family:var(--mono);font-size:9px;color:var(--mu);letter-spacing:1px;display:flex;justify-content:space-between}
+
+/* ── ARIA TAB ── */
+#tab-aria{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;gap:12px;background:var(--sur)}
+.robot-sec{
+  background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);
+  padding:20px;display:flex;flex-direction:column;align-items:center;gap:14px;
+}
+.rwrap{transition:transform .4s cubic-bezier(.34,1.56,.64,1),filter .4s}
+.rwrap.sf{transform:scale(1.1) rotate(-2deg);filter:drop-shadow(0 0 16px var(--dn));animation:rw .3s ease infinite alternate}
+.rwrap.ss{transform:scale(1.04);filter:drop-shadow(0 0 10px var(--bl));animation:rf 2.5s ease-in-out infinite}
+.rwrap.sp{transform:scale(1);filter:drop-shadow(0 0 5px rgba(57,255,154,.4))}
+@keyframes rw{from{transform:scale(1.1) rotate(-2deg)}to{transform:scale(1.1) rotate(2deg)}}
+@keyframes rf{0%,100%{transform:scale(1.04) translateY(0)}50%{transform:scale(1.04) translateY(-6px)}}
+.bubble{
+  position:relative;background:var(--s2);border:1px solid var(--bd2);
+  border-radius:var(--r);padding:12px 14px;font-size:14px;line-height:1.55;
+  color:var(--tx);text-align:center;width:100%;
+}
+.bubble::before{content:'';position:absolute;top:-9px;left:50%;transform:translateX(-50%);border:8px solid transparent;border-bottom-color:var(--bd2);border-top:none}
+.bubble::after{content:'';position:absolute;top:-7px;left:50%;transform:translateX(-50%);border:7px solid transparent;border-bottom-color:var(--s2);border-top:none}
+.tdots span{display:inline-block;width:6px;height:6px;background:var(--mu);border-radius:50%;animation:td 1.2s ease-in-out infinite;margin:0 2px}
+.tdots span:nth-child(2){animation-delay:.2s}.tdots span:nth-child(3){animation-delay:.4s}
+@keyframes td{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1)}}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);padding:14px;text-align:center}
+.cv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ac);line-height:1}
+.cl{font-size:10px;color:var(--mu);letter-spacing:1.5px;margin-top:4px;font-family:var(--mono)}
+.sech{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--mu);text-transform:uppercase;margin-bottom:8px}
+.mrow{display:flex;gap:8px}
+.mbtn{
+  flex:1;padding:12px 6px;font-family:var(--mono);font-size:10px;letter-spacing:1.5px;
+  text-transform:uppercase;background:var(--s2);border:1px solid var(--bd);
+  color:var(--mu);border-radius:6px;cursor:pointer;transition:all .2s;
+}
+.mbtn.active{background:rgba(57,255,154,.1);border-color:rgba(57,255,154,.5);color:var(--ac)}
+.evlog{background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);max-height:180px;overflow-y:auto;padding:8px;scrollbar-width:thin}
+.ev{display:flex;gap:8px;font-family:var(--mono);font-size:10px;color:var(--mu);padding:3px 2px;border-bottom:1px solid rgba(255,255,255,.03)}
+.et{color:#333;min-width:44px}.em{flex:1}
+.ev.ef .em{color:var(--dn)}.ev.es .em{color:var(--bl)}.ev.ea .em{color:var(--ac)}
+
+/* ── CHAT TAB ── */
+#tab-chat{background:var(--bg)}
+.chdr{
+  padding:12px 14px;background:var(--sur);border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
+}
+.chtitle{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--mu)}
+.aidot{width:7px;height:7px;border-radius:50%;background:var(--ac);box-shadow:0 0 6px var(--ac);animation:ad 2s ease-in-out infinite;flex-shrink:0}
+@keyframes ad{0%,100%{opacity:1}50%{opacity:.3}}
+.mtag{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--mu);background:var(--s2);border:1px solid var(--bd);padding:3px 7px;border-radius:3px}
+.cmsgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin}
+.cmsgs::-webkit-scrollbar{width:3px}.cmsgs::-webkit-scrollbar-thumb{background:var(--bd)}
+.msg{display:flex;flex-direction:column;gap:3px;max-width:88%;animation:mi .25s ease-out}
+@keyframes mi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{align-self:flex-end;align-items:flex-end}.msg.ai{align-self:flex-start;align-items:flex-start}
+.mw{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--mu)}
+.mb{padding:10px 13px;font-size:14px;line-height:1.55;border-radius:var(--r)}
+.msg.user .mb{background:rgba(255,107,53,.12);border:1px solid rgba(255,107,53,.25);color:#ffd0b8;border-radius:var(--r) 0 var(--r) var(--r)}
+.msg.ai .mb{background:var(--s2);border:1px solid var(--bd);color:var(--tx);border-radius:0 var(--r) var(--r) var(--r)}
+.msg.ai.mm .mb{border-left:2px solid var(--ac)}
+.cia{flex-shrink:0;background:var(--sur);border-top:1px solid var(--bd);padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom,10px))}
+.cirow{display:flex;gap:8px}
+#chatInput{
+  flex:1;background:var(--s2);border:1px solid var(--bd);color:var(--tx);
+  font-family:var(--body);font-size:16px;padding:12px 14px;
+  border-radius:var(--r) 0 0 var(--r);outline:none;transition:border-color .2s;
+}
+#chatInput:focus{border-color:var(--bl)}
+#chatInput::placeholder{color:var(--mu)}
+#sendBtn{
+  padding:12px 16px;background:rgba(59,158,255,.1);border:1px solid rgba(59,158,255,.35);
+  border-left:none;color:var(--bl);font-family:var(--mono);font-size:11px;
+  letter-spacing:1.5px;border-radius:0 var(--r) var(--r) 0;cursor:pointer;transition:all .2s;white-space:nowrap;
+}
+#sendBtn:active{background:rgba(59,158,255,.2)}
+
+/* ── SETTINGS MODAL ── */
+.mdbg{
+  display:none;position:fixed;inset:0;z-index:200;
+  background:rgba(0,0,0,.8);align-items:flex-end;justify-content:center;
+}
+.mdbg.open{display:flex}
+.mdl{
+  background:var(--sur);border:1px solid var(--bd);border-radius:14px 14px 0 0;
+  padding:20px 18px 28px;width:100%;max-width:480px;
+  animation:su .25s ease-out;
+  padding-bottom:max(28px,env(safe-area-inset-bottom,28px));
+}
+@keyframes su{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.mhandle{width:36px;height:4px;background:var(--bd);border-radius:2px;margin:0 auto 18px}
+.mtitle{font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--mu);margin-bottom:16px;text-transform:uppercase}
+.mdl label{display:block;font-family:var(--mono);font-size:10px;color:var(--mu);letter-spacing:1.5px;margin-bottom:6px;text-transform:uppercase}
+.mdl input{
+  width:100%;font-family:var(--mono);font-size:16px;background:var(--s2);
+  border:1px solid var(--bd);color:var(--tx);padding:12px 14px;
+  border-radius:var(--r);outline:none;transition:border-color .2s;margin-bottom:10px;
+}
+.mdl input:focus{border-color:var(--bl)}
+.mdl input::placeholder{color:var(--mu)}
+.mabtn{
+  width:100%;padding:14px;font-family:var(--mono);font-size:12px;letter-spacing:2px;
+  text-transform:uppercase;background:rgba(57,255,154,.1);border:1px solid rgba(57,255,154,.4);
+  color:var(--ac);border-radius:var(--r);cursor:pointer;transition:all .2s;margin-top:4px;
+}
+.mabtn:active{background:rgba(57,255,154,.2)}
+.mabtn2{background:rgba(59,158,255,.1);border-color:rgba(59,158,255,.4);color:var(--bl);margin-top:10px}
+.mclose{display:block;text-align:center;font-family:var(--mono);font-size:11px;color:var(--mu);margin-top:14px;cursor:pointer;letter-spacing:1px;padding:8px}
+.apist{font-family:var(--mono);font-size:11px;padding:8px 12px;border-radius:var(--r);margin-bottom:10px;display:none}
+.apist.ok{background:rgba(57,255,154,.1);color:var(--ac);border:1px solid rgba(57,255,154,.3);display:block}
+.apist.er{background:rgba(255,59,92,.1);color:var(--dn);border:1px solid rgba(255,59,92,.3);display:block}
+
+/* ── TAB BAR ── */
+.tabbar{
+  position:fixed;bottom:0;left:0;right:0;
+  height:calc(var(--tbh) + env(safe-area-inset-bottom,0px));
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  background:var(--sur);border-top:1px solid var(--bd);
+  display:flex;z-index:100;
+}
+.tab{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;cursor:pointer;color:var(--mu);transition:color .2s;
+  font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;
+  position:relative;
+}
+.tab svg{transition:transform .2s}
+.tab.active{color:var(--ac)}
+.tab.active svg{transform:scale(1.1)}
+.tab.active::after{content:'';position:absolute;top:0;left:20%;right:20%;height:2px;background:var(--ac);border-radius:0 0 2px 2px}
+.tbadge{position:absolute;top:6px;right:calc(50% - 16px);width:7px;height:7px;border-radius:50%;background:var(--dn);display:none}
+.tbadge.show{display:block}
+
+/* ── DESKTOP ≥ 768px ── */
+@media(min-width:768px){
+  :root{--tph:48px;--tbh:0px}
+  .topbar{padding:0 20px;gap:14px}
+  .brand{font-size:15px}
+  .desk-api{display:flex !important}
+  .icon-btn.settings-only{display:none}
+  .tabbar{display:none}
+  .content{
+    bottom:0;display:grid;
+    grid-template-columns:270px 1fr 310px;overflow:hidden;
+  }
+  .tab-panel{display:flex !important;position:relative;inset:auto}
+  #tab-aria{border-right:1px solid var(--bd)}
+  #tab-chat{background:var(--bg)}
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="brand">ARIA<em>·</em>AI</div>
+  <div class="mbadge" id="motionBadge">IDLE</div>
+  <div class="sp"></div>
+  <div class="desk-api">
+    <label>API:</label>
+    <input type="password" id="apiDesk" placeholder="sk-ant-… (optional)"/>
+    <button class="desk-save" id="apiSaveDesk">SAVE</button>
+    <span class="desk-ok" id="apiOkDesk">✓</span>
+  </div>
+  <div class="icon-btn settings-only" id="settingsBtn" title="Settings">⚙</div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- CAMERA TAB -->
+  <div class="tab-panel active" id="tab-camera">
+    <div class="cam-wrap">
+      <video id="videoEl" autoplay muted playsinline></video>
+      <canvas id="poseCanvas"></canvas>
+      <div class="hud">
+        <div class="hc tl"></div><div class="hc tr"></div>
+        <div class="hc bl"></div><div class="hc br"></div>
+        <div class="hlbl tl" id="hudTL">POSE · OFFLINE</div>
+        <div class="hlbl br">WRIST TRACK</div>
+      </div>
+      <div class="mflash" id="mflash"></div>
+      <div class="soverlay" id="soverlay">
+        <h2>ARIA MOTION AI</h2>
+        <p>Tap below to activate your camera.<br>I will track your wrist movement and react in real time.</p>
+        <button class="sbtn" id="startBtn">▶ ACTIVATE CAMERA</button>
+        <p style="font-size:11px">⚠️ Must be opened via <strong>https://</strong> on mobile<br>Tap ⚙ Settings to add API key or flip camera</p>
+      </div>
+    </div>
+    <div class="cstats">
+      <div class="cstat"><div class="csv" id="statSt">—</div><div class="csl">STATE</div></div>
+      <div class="cstat"><div class="csv" id="statFPS">0</div><div class="csl">FPS</div></div>
+      <div class="gwrap">
+        <div class="gbar"><div class="gfill" id="gfill"></div></div>
+        <div class="glbl"><span>SLOW</span><span id="gval">0.0</span><span>FAST</span></div>
+      </div>
+      <div class="cstat"><div class="csv" id="statR">0</div><div class="csl">REACTS</div></div>
+    </div>
+  </div>
+
+  <!-- ARIA TAB -->
+  <div class="tab-panel" id="tab-aria">
+    <div class="robot-sec">
+      <div class="rwrap sp" id="rwrap">
+        <svg width="110" height="120" viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="bg2" cx="50%" cy="40%" r="60%">
+              <stop offset="0%" stop-color="#1e2e1e"/><stop offset="100%" stop-color="#0a100a"/>
+            </radialGradient>
+          </defs>
+          <line x1="50" y1="6" x2="50" y2="18" stroke="#39ff9a" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="50" cy="5" r="4" fill="#39ff9a" id="ant"/>
+          <rect x="20" y="18" width="60" height="50" rx="10" fill="url(#bg2)" stroke="#2a3a2a" stroke-width="1.5"/>
+          <rect x="24" y="20" width="52" height="6" rx="4" fill="rgba(57,255,154,.05)"/>
+          <rect x="29" y="32" width="16" height="12" rx="4" fill="#080808" stroke="#1a2a1a" stroke-width="1"/>
+          <rect x="55" y="32" width="16" height="12" rx="4" fill="#080808" stroke="#1a2a1a" stroke-width="1"/>
+          <rect x="31" y="35" width="12" height="5" rx="2.5" fill="#39ff9a" id="eyeL"/>
+          <rect x="57" y="35" width="12" height="5" rx="2.5" fill="#39ff9a" id="eyeR"/>
+          <rect x="30" y="52" width="40" height="9" rx="4" fill="#080808" stroke="#1a2a1a" stroke-width="1"/>
+          <rect x="33" y="55" width="5" height="3" rx="1.5" fill="#222" id="m1"/>
+          <rect x="40" y="55" width="5" height="3" rx="1.5" fill="#222" id="m2"/>
+          <rect x="47" y="55" width="5" height="3" rx="1.5" fill="#222" id="m3"/>
+          <rect x="54" y="55" width="5" height="3" rx="1.5" fill="#222" id="m4"/>
+          <rect x="61" y="55" width="5" height="3" rx="1.5" fill="#222" id="m5"/>
+          <circle cx="20" cy="43" r="5" fill="#111a11" stroke="#2a3a2a" stroke-width="1.5"/>
+          <circle cx="20" cy="43" r="2" fill="#39ff9a" opacity=".6"/>
+          <circle cx="80" cy="43" r="5" fill="#111a11" stroke="#2a3a2a" stroke-width="1.5"/>
+          <circle cx="80" cy="43" r="2" fill="#39ff9a" opacity=".6"/>
+          <rect x="40" y="68" width="20" height="8" rx="3" fill="#0e140e" stroke="#1a2a1a" stroke-width="1"/>
+          <line x1="44" y1="70" x2="44" y2="74" stroke="#2a3a2a" stroke-width="1"/>
+          <line x1="50" y1="70" x2="50" y2="74" stroke="#2a3a2a" stroke-width="1"/>
+          <line x1="56" y1="70" x2="56" y2="74" stroke="#2a3a2a" stroke-width="1"/>
+          <rect x="18" y="76" width="64" height="32" rx="8" fill="url(#bg2)" stroke="#2a3a2a" stroke-width="1.5"/>
+          <rect x="28" y="82" width="44" height="20" rx="4" fill="#060c06" stroke="#1a2a1a" stroke-width="1"/>
+          <circle cx="36" cy="92" r="3" fill="#39ff9a" id="led1" opacity=".8"/>
+          <circle cx="46" cy="92" r="3" fill="#3b9eff" id="led2" opacity=".6"/>
+          <circle cx="56" cy="92" r="3" fill="#ffd600" id="led3" opacity=".4"/>
+          <circle cx="66" cy="92" r="3" fill="#2a2a2a" id="led4"/>
+          <line x1="28" y1="96" x2="72" y2="96" stroke="#1a2a1a" stroke-width="1"/>
+          <rect x="25" y="104" width="20" height="6" rx="3" fill="#0a100a" stroke="#1a2a1a" stroke-width="1"/>
+          <rect x="55" y="104" width="20" height="6" rx="3" fill="#0a100a" stroke="#1a2a1a" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="bubble"><span id="bubbleTxt">Activate camera to begin…</span></div>
+    </div>
+
+    <div><div class="sech">Stats</div>
+    <div class="cards">
+      <div class="card"><div class="cv" id="statR2">0</div><div class="cl">REACTIONS</div></div>
+      <div class="card"><div class="cv" id="statM">0</div><div class="cl">AI MSGS</div></div>
+    </div></div>
+
+    <div><div class="sech">Response Mode</div>
+    <div class="mrow">
+      <button class="mbtn active" data-mode="friendly">FRIENDLY</button>
+      <button class="mbtn" data-mode="focused">FOCUSED</button>
+      <button class="mbtn" data-mode="fun">FUN</button>
+    </div></div>
+
+    <div><div class="sech">Event Log</div>
+    <div class="evlog" id="evlog"></div></div>
+  </div>
+
+  <!-- CHAT TAB -->
+  <div class="tab-panel" id="tab-chat" style="display:flex;flex-direction:column;">
+    <div class="chdr">
+      <div class="aidot"></div>
+      <div class="chtitle">AI Chat</div>
+      <div class="mtag" id="mtag">RULE-BASED</div>
+    </div>
+    <div class="cmsgs" id="chatMsgs">
+      <div class="msg ai"><div class="mw">ARIA</div>
+      <div class="mb">Hi! I'm ARIA. Tap 📷 Camera to activate motion tracking. Add your Anthropic API key in ⚙ Settings for real Claude AI chat!</div></div>
+    </div>
+    <div class="cia">
+      <div class="cirow">
+        <input type="text" id="chatInput" placeholder="Type a message…" maxlength="300" autocomplete="off" autocorrect="off"/>
+        <button id="sendBtn">SEND</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<!-- TAB BAR (mobile only) -->
+<div class="tabbar">
+  <div class="tab active" data-tab="camera" id="tabCamera">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+    </svg>
+    CAMERA
+    <div class="tbadge show" id="cambadge"></div>
+  </div>
+  <div class="tab" data-tab="aria" id="tabAria">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <rect x="5" y="2" width="14" height="20" rx="2"/>
+      <circle cx="12" cy="10" r="3"/>
+      <line x1="8" y1="17" x2="16" y2="17"/>
+    </svg>
+    ARIA
+  </div>
+  <div class="tab" data-tab="chat" id="tabChat">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+    CHAT
+    <div class="tbadge" id="chatbadge"></div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="mdbg" id="mdbg">
+  <div class="mdl">
+    <div class="mhandle"></div>
+    <div class="mtitle">Settings</div>
+    <div class="apist" id="apist"></div>
+    <label>Anthropic API Key (optional)</label>
+    <input type="password" id="apiMob" placeholder="sk-ant-api03-…" autocomplete="off"/>
+    <button class="mabtn" id="apiSaveMob">Save Key · Enable Claude AI</button>
+    <div style="height:14px"></div>
+    <label>Camera</label>
+    <button class="mabtn mabtn2" id="flipBtn">⟳ Flip Front / Rear Camera</button>
+    <div class="mclose" id="mclose">Close</div>
+  </div>
+</div>
+
+<script>
+/* ── STATE ── */
+const S={
+  motion:'IDLE',speed:0,sm:0,lastW:null,
+  camOn:false,apiKey:'',mode:'friendly',
+  rc:0,mc:0,fps:0,fpsN:0,lastFT:Date.now(),
+  lastR:0,lastSp:0,speaking:false,voice:null,
+  typEl:null,activeTab:'camera',face:'user',
+  poseInst:null,camInst:null,rafId:null,
+};
+const SLOW=3,FAST=12,RC=5000,SC=5500,SM=0.28;
+
+/* ── RESPONSES ── */
+const RB={
+  friendly:{
+    FAST:["Wow, big energy! You're moving fast!","Fast movement — everything okay?","High speed! Breathe if you need to.","Great energy — you're going for it!"],
+    SLOW:["Nice and steady. Smooth movement.","Easy pace — you seem calm right now.","Gentle motion. Good flow.","Slow and controlled. I like it."],
+    STOP:["All still. Resting? I'm here.","Gone quiet — thinking something over?","Peaceful stillness. Standing by.","No motion. I'm watching over you."],
+  },
+  focused:{
+    FAST:["Speed spike. Reduce motion.","High velocity logged.","Excessive movement.","Threshold exceeded."],
+    SLOW:["Controlled pace. Good.","Motion: steady.","Gradual movement. Acceptable.","Within parameters."],
+    STOP:["Motion: zero. Standby.","Stationary. Monitoring.","No movement.","All clear."],
+  },
+  fun:{
+    FAST:["ZOOM! You're a blur! 🚀","SPEED RUN! 😂","WHOA! Slow down!","FAST MODE: ON 🔥"],
+    SLOW:["Slow-mo vibes 🎬","Smooth moves ✨","Chill mode 🧊","Mysterious… 👀"],
+    STOP:["FREEZE FRAME 🗿","Dramatic pause! 😄","Still as a rock.","PAUSE. Nice."],
+  },
+};
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const getRB=st=>pick(RB[S.mode]?.[st]||RB.friendly.STOP);
+
+/* ── VOICE ── */
+function initVoice(){
+  if(!window.speechSynthesis)return;
+  const load=()=>{
+    const vs=speechSynthesis.getVoices();if(!vs.length)return;
+    const fk=['female','zira','samantha','victoria','karen','moira','ava','serena','allison','nicky'];
+    S.voice=vs.find(v=>fk.some(k=>v.name.toLowerCase().includes(k)))||vs.find(v=>v.lang.startsWith('en'))||vs[0];
+  };
+  speechSynthesis.onvoiceschanged=load;load();
+}
+function speak(t){
+  if(!window.speechSynthesis||S.speaking)return;
+  const n=Date.now();if(n-S.lastSp<SC)return;
+  S.lastSp=n;S.speaking=true;
+  const u=new SpeechSynthesisUtterance(t);
+  if(S.voice)u.voice=S.voice;u.rate=1;u.pitch=1.1;u.volume=.85;
+  u.onend=u.onerror=()=>{S.speaking=false;};
+  speechSynthesis.speak(u);
+}
+
+/* ── CLAUDE API ── */
+async function callClaude(msg){
+  if(!S.apiKey)return null;
+  const sys=`You are ARIA, a compact AI motion assistant in a webcam app. Camera:${S.camOn?'on':'off'}. Motion:${S.motion}(speed:${S.speed.toFixed(1)}). Mode:${S.mode}. Reply 1-3 sentences max. No markdown.`;
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,system:sys,messages:[{role:'user',content:msg}]})
+    });
+    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.statusText);}
+    const d=await r.json();return d.content?.[0]?.text?.trim()||null;
+  }catch(e){console.error(e);return null;}
+}
+
+/* ── UI HELPERS ── */
+const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const setBubble=t=>{document.getElementById('bubbleTxt').textContent=t;};
+
+function addMsg(txt,role,isMotion=false){
+  if(S.typEl?.parentNode)S.typEl.parentNode.removeChild(S.typEl);S.typEl=null;
+  const w=document.getElementById('chatMsgs');
+  const el=document.createElement('div');
+  el.className=`msg ${role}${isMotion?' mm':''}`;
+  el.innerHTML=`<div class="mw">${role==='user'?'YOU':'ARIA'}</div><div class="mb">${esc(txt)}</div>`;
+  w.appendChild(el);w.scrollTop=w.scrollHeight;
+  if(role==='ai'){
+    S.mc++;document.getElementById('statM').textContent=S.mc;
+    if(S.activeTab!=='chat'&&window.innerWidth<768){
+      document.getElementById('chatbadge').classList.add('show');
+    }
+  }
+}
+function showTyping(){
+  if(S.typEl?.parentNode)S.typEl.parentNode.removeChild(S.typEl);
+  const w=document.getElementById('chatMsgs');
+  S.typEl=document.createElement('div');S.typEl.className='msg ai';
+  S.typEl.innerHTML=`<div class="mw">ARIA</div><div class="mb"><div class="tdots"><span></span><span></span><span></span></div></div>`;
+  w.appendChild(S.typEl);w.scrollTop=w.scrollHeight;
+}
+function logEv(txt,cls=''){
+  const l=document.getElementById('evlog');
+  const t=new Date().toTimeString().slice(0,8);
+  const el=document.createElement('div');el.className=`ev ${cls}`;
+  el.innerHTML=`<span class="et">${t}</span><span class="em">${esc(txt)}</span>`;
+  l.prepend(el);while(l.children.length>50)l.removeChild(l.lastChild);
+}
+function flashMot(lbl,cls){
+  const el=document.getElementById('mflash');
+  el.textContent=lbl;el.className=`mflash c-${cls}`;
+  void el.offsetWidth;el.classList.add('show');
+}
+function updBadge(st){
+  document.getElementById('motionBadge').textContent=st;
+  document.getElementById('motionBadge').className=`mbadge ${st}`;
+  document.getElementById('statSt').textContent=st==='IDLE'?'—':st;
+}
+function updRobot(st){
+  document.getElementById('rwrap').className=`rwrap ${st==='FAST'?'sf':st==='SLOW'?'ss':'sp'}`;
+  const ec=st==='FAST'?'#ff3b5c':st==='SLOW'?'#3b9eff':'#39ff9a';
+  ['eyeL','eyeR'].forEach(id=>{const e=document.getElementById(id);if(e)e.setAttribute('fill',ec);});
+  const l4=document.getElementById('led4');if(l4)l4.setAttribute('fill',st==='FAST'?'#ff3b5c':'#2a2a2a');
+}
+
+/* ── REACTION ── */
+async function triggerReaction(newState){
+  const n=Date.now();if(n-S.lastR<RC)return;S.lastR=n;
+  S.rc++;
+  document.getElementById('statR').textContent=S.rc;
+  document.getElementById('statR2').textContent=S.rc;
+  flashMot(newState,newState);
+  logEv(`Motion → ${newState}`,newState==='FAST'?'ef':newState==='SLOW'?'es':'');
+  const rb=getRB(newState);setBubble(rb);speak(rb);
+  if(S.apiKey){
+    showTyping();
+    const ai=await callClaude(`My movement just changed to: ${newState} (speed:${S.speed.toFixed(1)}). React briefly.`);
+    if(ai){addMsg(ai,'ai',true);setBubble(ai.slice(0,90));logEv(`ARIA:${ai.slice(0,45)}`,'ea');}
+    else addMsg(rb,'ai',true);
+  } else {addMsg(rb,'ai',true);}
+}
+
+/* ── POSE ── */
+function onPose(results){
+  S.fpsN++;const n=Date.now();
+  if(n-S.lastFT>=1000){S.fps=S.fpsN;document.getElementById('statFPS').textContent=S.fps;S.fpsN=0;S.lastFT=n;}
+  const cv=document.getElementById('poseCanvas');const ctx=cv.getContext('2d');
+  cv.width=cv.offsetWidth;cv.height=cv.offsetHeight;ctx.clearRect(0,0,cv.width,cv.height);
+  if(!results.poseLandmarks){S.lastW=null;S.sm*=0.8;S.speed=S.sm;classify();return;}
+  const lm=results.poseLandmarks,W=cv.width,H=cv.height;
+  const CO=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
+  ctx.strokeStyle='rgba(57,255,154,.3)';ctx.lineWidth=1.5;
+  CO.forEach(([a,b])=>{
+    if(lm[a]?.visibility>.3&&lm[b]?.visibility>.3){
+      ctx.beginPath();ctx.moveTo(lm[a].x*W,lm[a].y*H);ctx.lineTo(lm[b].x*W,lm[b].y*H);ctx.stroke();
+    }
+  });
+  lm.forEach((p,i)=>{
+    if(p.visibility<.3)return;
+    ctx.beginPath();ctx.arc(p.x*W,p.y*H,3,0,Math.PI*2);
+    ctx.fillStyle=(i===15||i===16)?'rgba(255,59,92,.9)':'rgba(57,255,154,.5)';ctx.fill();
+  });
+  [15,16].forEach(i=>{
+    if(!lm[i]||lm[i].visibility<.3)return;
+    ctx.beginPath();ctx.arc(lm[i].x*W,lm[i].y*H,12,0,Math.PI*2);
+    ctx.strokeStyle='rgba(255,59,92,.5)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.font='9px monospace';ctx.fillStyle='rgba(255,59,92,.7)';
+    ctx.fillText(i===15?'L':'R',lm[i].x*W+14,lm[i].y*H-6);
+  });
+  const vis=[lm[15],lm[16]].filter(p=>p&&p.visibility>.3);
+  let ax=null,ay=null;
+  if(vis.length){ax=vis.reduce((s,p)=>s+p.x,0)/vis.length;ay=vis.reduce((s,p)=>s+p.y,0)/vis.length;}
+  if(ax!==null&&S.lastW){const dx=(ax-S.lastW.x)*100,dy=(ay-S.lastW.y)*100;const raw=Math.sqrt(dx*dx+dy*dy);S.sm=S.sm*(1-SM)+raw*SM;}
+  S.lastW=ax!==null?{x:ax,y:ay}:null;if(!ax)S.sm*=.8;S.speed=S.sm;
+  const pct=Math.min(100,(S.speed/(FAST*1.4))*100);
+  const gf=document.getElementById('gfill');
+  gf.style.width=pct+'%';gf.style.background=S.speed>=FAST?'var(--dn)':S.speed>=SLOW?'var(--bl)':'var(--mu)';
+  document.getElementById('gval').textContent=S.speed.toFixed(1);
+  classify();
+}
+function classify(){
+  const ns=S.speed>=FAST?'FAST':S.speed>=SLOW?'SLOW':'STOP';
+  updBadge(ns);updRobot(ns);
+  if(ns!==S.motion){S.motion=ns;triggerReaction(ns);}
+}
+
+/* ── CAMERA START ── */
+function stopCamera(){
+  if(S.rafId){cancelAnimationFrame(S.rafId);S.rafId=null;}
+  const v=document.getElementById('videoEl');
+  if(v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+}
+
+function startPoseLoop(){
+  const v=document.getElementById('videoEl');
+  if(v.paused||v.ended||!S.poseInst){S.rafId=requestAnimationFrame(startPoseLoop);return;}
+  S.poseInst.send({image:v}).then(()=>{
+    S.rafId=requestAnimationFrame(startPoseLoop);
+  }).catch(()=>{
+    S.rafId=requestAnimationFrame(startPoseLoop);
+  });
+}
+
+async function startCamera(face){
+  const btn=document.getElementById('startBtn');
+  btn.disabled=true;btn.textContent='▶ CONNECTING…';
+
+  /* ── HTTPS check (iOS Safari blocks camera on file:// / http://) ── */
+  const isSecure=location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  if(!isSecure){
+    btn.disabled=false;btn.textContent='▶ RETRY CAMERA';
+    const msg='⚠️ Camera needs HTTPS to work on phones.\n\nOptions:\n• Open via https:// (use a local server or upload to a host)\n• On Android Chrome: chrome://flags → Insecure origins → add your URL\n• Use a free host like GitHub Pages or Netlify';
+    addMsg(msg,'ai');
+    document.getElementById('soverlay').querySelector('p').textContent='Camera requires HTTPS on mobile. See Chat tab for help.';
+    logEv('HTTPS required for camera on mobile');
+    return;
+  }
+
+  /* ── Stop any existing stream ── */
+  stopCamera();
+
+  try{
+    const v=document.getElementById('videoEl');
+
+    /* Try preferred constraints first, fall back to bare minimum */
+    let stream=null;
+    const constraintSets=[
+      {video:{facingMode:{ideal:face},width:{ideal:640},height:{ideal:480}},audio:false},
+      {video:{facingMode:{ideal:face}},audio:false},
+      {video:true,audio:false},
+    ];
+    let lastErr=null;
+    for(const c of constraintSets){
+      try{stream=await navigator.mediaDevices.getUserMedia(c);break;}
+      catch(e){lastErr=e;stream=null;}
+    }
+    if(!stream)throw lastErr;
+
+    v.srcObject=stream;
+    v.setAttribute('playsinline','');
+    v.setAttribute('muted','');
+    /* iOS requires a user-gesture play; this is inside a click handler so it's fine */
+    await v.play().catch(()=>{});
+
+    /* Wait until video has actual dimensions */
+    await new Promise((res,rej)=>{
+      if(v.readyState>=2)return res();
+      const t=setTimeout(()=>rej(new Error('Video timed out')),8000);
+      v.onloadeddata=()=>{clearTimeout(t);res();};
+    });
+
+    /* ── Init MediaPipe Pose (only once) ── */
+    if(!S.poseInst){
+      setBubble('Loading pose model…');
+      btn.textContent='▶ LOADING MODEL…';
+      S.poseInst=new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+      S.poseInst.setOptions({
+        modelComplexity:0,       /* lite = fastest, essential for mobile */
+        smoothLandmarks:true,
+        enableSegmentation:false,
+        minDetectionConfidence:.5,
+        minTrackingConfidence:.5,
+      });
+      S.poseInst.onResults(onPose);
+      await S.poseInst.initialize();
+    }
+
+    /* ── Start manual RAF loop (replaces Camera utility — works on iOS) ── */
+    startPoseLoop();
+
+    S.camOn=true;S.face=face;
+    document.getElementById('soverlay').style.display='none';
+    document.getElementById('hudTL').textContent='POSE · ACTIVE';
+    document.getElementById('cambadge').classList.remove('show');
+    setBubble('Camera on! Move your wrists and I will react!');
+    logEv('Camera active. Pose tracking started.','ea');
+    addMsg("Camera on! Move your wrists — I'll react to your speed!",'ai');
+
+  }catch(err){
+    btn.disabled=false;btn.textContent='▶ RETRY CAMERA';
+    console.error('Camera error:',err);
+
+    /* Human-readable error messages */
+    let msg='Camera error: '+err.message;
+    if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError')
+      msg='❌ Camera permission denied.\n\nOn iPhone: Settings → Safari → Camera → Allow\nOn Android: tap the lock icon in the browser address bar → allow Camera';
+    else if(err.name==='NotFoundError'||err.name==='DevicesNotFoundError')
+      msg='❌ No camera found on this device.';
+    else if(err.name==='NotReadableError'||err.name==='TrackStartError')
+      msg='❌ Camera is already in use by another app. Close other apps and try again.';
+    else if(err.name==='OverconstrainedError')
+      msg='❌ Camera constraint failed. Try tapping Retry — the app will use simpler settings.';
+    else if(err.message==='Video timed out')
+      msg='❌ Camera stream timed out. Check permissions and try again.';
+
+    addMsg(msg,'ai');
+    logEv('Camera error: '+err.name);
+  }
+}
+document.getElementById('startBtn').addEventListener('click',()=>startCamera(S.face));
+document.getElementById('flipBtn').addEventListener('click',()=>{
+  const next=S.face==='user'?'environment':'user';
+  document.getElementById('mdbg').classList.remove('open');
+  S.face=next;
+  if(S.camOn){stopCamera();S.camOn=false;startCamera(next);}
+});
+
+/* ── CHAT SEND ── */
+const KWMAP={fast:"Fast wrists trigger my energy mode!",slow:"Slow movement puts me in a calm flow.",stop:"Stillness = standby mode for me.",hello:"Hello! Good to hear from you!",hi:"Hey! How's it going?",name:"I'm ARIA — motion-reactive AI assistant.",help:"Activate your camera and move your wrists. I'll react!",camera:"Tap the Camera tab and hit Activate!",flip:"Tap ⚙ Settings → Flip Camera.",key:"Tap ⚙ Settings to add your Anthropic API key.",mode:"Use the buttons in the ARIA tab to change my style!"};
+async function sendChat(){
+  const inp=document.getElementById('chatInput');const txt=inp.value.trim();if(!txt)return;
+  inp.value='';const btn=document.getElementById('sendBtn');btn.disabled=true;
+  addMsg(txt,'user');logEv(`You: "${txt.slice(0,40)}"`);showTyping();
+  let reply=null;
+  if(S.apiKey)reply=await callClaude(txt);
+  if(!reply){
+    const lo=txt.toLowerCase();
+    for(const[k,r]of Object.entries(KWMAP)){if(lo.includes(k)){reply=r;break;}}
+    if(!reply)reply=pick(["Try waving at the camera!","Add an API key in ⚙ for smarter replies.","Motion or chat — I'm here.","Move fast and watch me react 🚀","Not sure what to say, but I'm listening!"]);
+  }
+  addMsg(reply,'ai');setBubble(reply.slice(0,90)+(reply.length>90?'…':''));speak(reply);
+  logEv(`ARIA: "${reply.slice(0,40)}"`,'ea');btn.disabled=false;
+}
+document.getElementById('sendBtn').addEventListener('click',sendChat);
+document.getElementById('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
+
+/* ── TABS ── */
+function switchTab(tab){
+  S.activeTab=tab;
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  const tp=document.getElementById('tab-'+tab);if(tp)tp.classList.add('active');
+  const tt=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(tt)tt.classList.add('active');
+  if(tab==='chat'){document.getElementById('chatbadge').classList.remove('show');setTimeout(()=>{const m=document.getElementById('chatMsgs');m.scrollTop=m.scrollHeight;},50);}
+}
+document.querySelectorAll('.tab').forEach(t=>{t.addEventListener('click',()=>switchTab(t.dataset.tab));});
+
+/* ── MODE BUTTONS ── */
+document.querySelectorAll('.mbtn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.mbtn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');S.mode=b.dataset.mode;
+    const m={friendly:'Friendly mode on.',focused:'Focused mode.',fun:'Fun mode! 🎉'};
+    setBubble(m[S.mode]);logEv(`Mode → ${S.mode}`,'ea');
+  });
+});
+
+/* ── API KEY ── */
+function saveApiKey(key){
+  if(!key)return;S.apiKey=key;
+  document.getElementById('mtag').textContent='claude-sonnet-4';
+  document.getElementById('apiDesk').value='••••••••••••';
+  document.getElementById('apiOkDesk').style.display='inline';
+  const st=document.getElementById('apist');st.textContent='✓ API key saved — Claude AI enabled!';st.className='apist ok';
+  logEv('API key saved. Claude enabled.','ea');
+  addMsg("API key saved! I'm powered by Claude — ask me anything!",'ai');
+  setBubble('Claude AI enabled ✓');
+}
+document.getElementById('apiSaveDesk').addEventListener('click',()=>saveApiKey(document.getElementById('apiDesk').value.trim()));
+document.getElementById('apiSaveMob').addEventListener('click',()=>{saveApiKey(document.getElementById('apiMob').value.trim());document.getElementById('apiMob').value='••••••••••••';});
+
+/* ── SETTINGS MODAL ── */
+document.getElementById('settingsBtn').addEventListener('click',()=>document.getElementById('mdbg').classList.add('open'));
+document.getElementById('mclose').addEventListener('click',()=>document.getElementById('mdbg').classList.remove('open'));
+document.getElementById('mdbg').addEventListener('click',e=>{if(e.target===document.getElementById('mdbg'))document.getElementById('mdbg').classList.remove('open');});
+
+/* ── ROBOT ANIM ── */
+let ph=0;
+setInterval(()=>{
+  ph+=0.12;
+  ['m1','m2','m3','m4','m5'].forEach((id,i)=>{
+    const el=document.getElementById(id);if(!el)return;
+    const sp=S.motion==='FAST'?1.2:S.motion==='SLOW'?.5:.15;
+    const a=Math.max(.1,Math.min(1,.15+Math.abs(Math.sin(ph*sp+i*.9))*.85));
+    el.setAttribute('fill',`rgba(57,255,154,${a.toFixed(2)})`);
+  });
+  const ant=document.getElementById('ant');if(!ant)return;
+  ant.setAttribute('fill',S.motion==='FAST'?'#ff3b5c':S.motion==='SLOW'?'#3b9eff':'#39ff9a');
+  ant.setAttribute('opacity',(0.4+0.6*Math.abs(Math.sin(ph*.35))).toFixed(2));
+},80);
+
+/* ── INIT ── */
+window.addEventListener('load',()=>{initVoice();updBadge('IDLE');logEv('System ready.','ea');});
+</script>
+</body>
+</html>
